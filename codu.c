@@ -91,6 +91,11 @@ main(int argc, char *argv[])
 		 PROG, USER, HOST, TIME, PID);
 	/* and dump it */
 	dump_core(cnm);
+
+	/* Change our current working directory to that of the
+	 * crashing process */
+	snprintf(cwd, sizeof(cwd), "/proc/%s/cwd", argv[4]);
+	chdir(cwd);
 	return 0;
 }
 
