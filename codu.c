@@ -87,7 +87,7 @@ cnt(off_t off, size_t rlim)
 static int
 dump_core(const char *file, size_t rlim)
 {
-#define CFILE_FLAGS	(O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW)
+#define CFILE_FLAGS	(O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_EXCL)
 	int fdi, fdo, fdb;
 	ssize_t sz;
 	off_t off[1] = {0};
