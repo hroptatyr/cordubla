@@ -12,7 +12,7 @@
 #include <pwd.h>
 #include <string.h>
 
-const char*
+static const char*
 user_name(int uid)
 {
 	/* just clip the fucker */
@@ -73,9 +73,21 @@ mkdir_core_dir(const char *uid)
 	return 0;
 }
 
-static int
-dump_core(const char *file)
+static inline size_t
+cnt(off_t off, size_t rlim)
 {
+/* the usual page size we want to cp over */
+#define CNT	(2048000)
+	if (off + CNT < rlim) {
+		return CNT;
+	}
+	return rlim - off;
+}
+
+static int
+dump_core(const char *file, size_t rlim)
+{
+#define CFILE_FLAGS	(O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW)
 	int fdi, fdo, fdb;
 	ssize_t sz;
 	off_t off[1] = {0};
@@ -83,28 +95,22 @@ dump_core(const char *file)
 	if ((fdi = STDIN_FILENO) < 0) {
 		return -1;
 	}
-	if ((fdo = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0600)) < 0) {
+	if ((fdo = open(file, CFILE_FLAGS, 0600)) < 0) {
 		/* no need to close fdi */
 		return -1;
 	}
+#if 1
 	if ((fdb = open("dbg", O_WRONLY | O_CREAT | O_TRUNC, 0600)) < 0) {
 		close(fdo);
 		return -1;
 	}
+#endif
 	/* copy fdi to fdo */
 #define SPF	(SPLICE_F_MORE)
-#define CNT	(2048000)
-	while ((sz = splice(fdi, NULL, fdo, off, CNT, SPF)) > 0) {
-		char szs[32];
+	while ((sz = splice(fdi, NULL, fdo, off, cnt(off[0], rlim), SPF)) > 0) {
+		char szs[64];
 		size_t szl;
-		szl = snprintf(szs, sizeof(szs), "%zd\n", sz);
-		write(fdb, szs, szl);
-	}
-	{
-		char szs[32];
-		size_t szl;
-		szl = snprintf(szs, sizeof(szs), "%zd %d %s\n",
-			       sz, errno, strerror(errno));
+		szl = snprintf(szs, sizeof(szs), "%zd %zd\n", sz, off[0]);
 		write(fdb, szs, szl);
 	}
 	/* and we're out */
@@ -128,7 +134,7 @@ main(int argc, char *argv[])
 #define PROG	(argv[6])
 	char cwd[PATH_MAX];
 	char cnm[PATH_MAX];
-	long int clim;
+	size_t clim;
 	int uid;
 
 	/* check caller first */
@@ -156,7 +162,7 @@ main(int argc, char *argv[])
 	snprintf(cnm, sizeof(cnm), "core-%s.%s.%s.%s.%s.dump",
 		 PROG, USER, HOST, TIME, PID);
 	/* and dump it */
-	dump_core(cnm);
+	dump_core(cnm, clim);
 	return 0;
 }
 
