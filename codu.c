@@ -73,8 +73,6 @@ mkdir_core_dir(const char *uid)
 	return 0;
 }
 
-#include <errno.h>
-
 static int
 dump_core(const char *file)
 {
