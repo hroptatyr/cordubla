@@ -69,6 +69,7 @@ main(int argc, char *argv[])
 
 	/* check caller first */
 	if (argc < 6) {
+		fputs("Usage: codu UID HOST STAMP PID LIMIT [NAME]\n", stderr);
 		return 1;
 	}
 
