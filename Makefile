@@ -1,4 +1,4 @@
-all: codu
+all: codu test
 
 clean:
 	rm -f *.o codu
