@@ -6,11 +6,72 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
+
+
+/* special purpose */
+#include <pwd.h>
 #include <string.h>
+
+const char*
+user_name(int uid)
+{
+	/* just clip the fucker */
+	static char un[9] = {0};
+	struct passwd *pw = getpwuid(uid);
+	strncpy(un, pw->pw_name, sizeof(un) - 1);
+	return un;
+}
 
 
 /* configurable? */
 #define CORE_DIR	"/tmp/core"
+
+static int
+mkdir_safe(const char *name, mode_t mode)
+{
+	struct stat st[1] = {{0}};
+	lstat(name, st);
+	if (S_ISDIR(st->st_mode)) {
+		return 1;
+	}
+	return mkdir(name, mode);
+}
+
+static int
+mkdir_core_dir(const char *uid)
+{
+	(void)mkdir("/tmp", 0755);
+	if (chdir("/tmp") < 0) {
+		return -1;
+	}
+	(void)mkdir("core", 0755);
+	if (chdir("core") < 0) {
+		return -1;
+	}
+	/* now create the user dir, maybe */
+	switch (mkdir_safe(uid, 0700)) {
+	case 0: {
+		int uidn = strtoul(uid, NULL, 10);
+		const char *unm = user_name(uidn);
+		/* got created */
+		chown(uid, uidn, 0);
+		/* also generate a symlink */
+		symlink(uid, unm);
+		lchown(unm, uidn, 0);
+	}
+	case 1:
+		/* was there before */
+		break;
+	case -1:
+		/* whatever */
+		return -1;
+	}
+	/* finally cd into user's core dir */
+	if (chdir(uid) < 0) {
+		return -1;
+	}
+	return 0;
+}
 
 static int
 dump_core(const char *file)
@@ -73,7 +134,7 @@ main(int argc, char *argv[])
 	}
 
 	/* create the directories and cd there */
-	if (chdir(CORE_DIR) < 0) {
+	if (mkdir_core_dir(USER) < 0) {
 		return 1;
 	}
 
