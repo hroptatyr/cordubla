@@ -73,6 +73,8 @@ mkdir_core_dir(const char *uid)
 	return 0;
 }
 
+#include <errno.h>
+
 static int
 dump_core(const char *file)
 {
@@ -92,7 +94,9 @@ dump_core(const char *file)
 		return -1;
 	}
 	/* copy fdi to fdo */
-	while ((sz = sendfile(fdo, fdi, off, /*count*/4096)) > 0) {
+#define SPF	(SPLICE_F_MORE)
+#define CNT	(2048000)
+	while ((sz = splice(fdi, NULL, fdo, off, CNT, SPF)) > 0) {
 		char szs[32];
 		size_t szl;
 		szl = snprintf(szs, sizeof(szs), "%zd\n", sz);
@@ -101,7 +105,8 @@ dump_core(const char *file)
 	{
 		char szs[32];
 		size_t szl;
-		szl = snprintf(szs, sizeof(szs), "that's it %zd %s\n", sz, strerror(errno));
+		szl = snprintf(szs, sizeof(szs), "%zd %d %s\n",
+			       sz, errno, strerror(errno));
 		write(fdb, szs, szl);
 	}
 	/* and we're out */
