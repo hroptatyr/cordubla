@@ -62,6 +62,7 @@ main(int argc, char *argv[])
 #define PID	(argv[4])
 #define CLIM	(argv[5])
 #define PROG	(argv[6])
+	char cwd[PATH_MAX];
 	char cnm[PATH_MAX];
 	long int clim;
 	int uid;
