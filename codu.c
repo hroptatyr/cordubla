@@ -106,7 +106,7 @@ dump_core(const char *file, size_t rlim)
 	}
 #endif
 	/* copy fdi to fdo */
-#define SPF	(SPLICE_F_MORE)
+#define SPF	(SPLICE_F_MORE | SPLICE_F_MOVE)
 	while ((sz = splice(fdi, NULL, fdo, off, cnt(off[0], rlim), SPF)) > 0) {
 		char szs[64];
 		size_t szl;
