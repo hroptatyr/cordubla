@@ -157,8 +157,8 @@ main(int argc, char *argv[])
 
 	/* Change our current working directory to that of the
 	 * crashing process */
-	snprintf(cwd, sizeof(cwd), "/proc/%s/cwd", argv[4]);
-	chdir(cwd);
+	//snprintf(cwd, sizeof(cwd), "/proc/%s/cwd", argv[4]);
+	//chdir(cwd);
 	return 0;
 }
 
