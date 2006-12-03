@@ -77,11 +77,69 @@ static inline size_t
 cnt(off_t off, size_t rlim)
 {
 /* the usual page size we want to cp over */
+#define PGSZ	(4096)
 #define CNT	(2048000)
 	if (off + CNT < rlim) {
 		return CNT;
 	}
 	return rlim - off;
+}
+
+static inline int
+check_page(const char *buf)
+{
+/* return non-0 if page contains stuff other than zeroes */
+	/* assume alignment */
+	const long int *p = (const void*)buf;
+	const long int *e = (const void*)(buf + PGSZ);
+	while (p < e && *p++ == 0);
+	return p < e;
+}
+
+static inline off_t
+find_skip(const char *buf, size_t bsz)
+{
+	off_t res = 0;
+	while (res + PGSZ < bsz) {
+		if (check_page(buf + res)) {
+			break;
+		}
+		res += PGSZ;
+	}
+	return res;
+}
+
+static int
+dump_core_sparsely(const char *file, size_t rlim)
+{
+#define CFILE_FLAGS	(O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_EXCL)
+	int fdi, fdo;
+	ssize_t sz;
+	off_t off = 0;
+	/* use the stack space */
+	char buf[CNT] __attribute__((aligned(16)));
+
+	if ((fdi = STDIN_FILENO) < 0) {
+		return -1;
+	}
+	if ((fdo = open(file, CFILE_FLAGS, 0600)) < 0) {
+		/* no need to close fdi */
+		return -1;
+	}
+	/* copy fdi to fdo */
+#define SPF	(SPLICE_F_MORE | SPLICE_F_MOVE)
+	while ((sz = read(fdi, buf, cnt(off, rlim))) > 0) {
+		/* find longest zero sequence, page wise */
+		off_t sk = find_skip(buf, sz);
+		if (sk) {
+			lseek(fdo, sk, SEEK_CUR);
+		}
+		off += write(fdo, buf + sk, sz - sk);
+	}
+	/* and we're out */
+	close(fdo);
+	close(fdi);
+	return 0;
 }
 
 static int
