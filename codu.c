@@ -147,7 +147,6 @@ dump_core(const char *file, size_t rlim)
 {
 #define CFILE_FLAGS	(O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_EXCL)
 	int fdi, fdo;
-	ssize_t sz;
 	off_t off[1] = {0};
 
 	if ((fdi = STDIN_FILENO) < 0) {
@@ -159,12 +158,7 @@ dump_core(const char *file, size_t rlim)
 	}
 	/* copy fdi to fdo */
 #define SPF	(SPLICE_F_MORE | SPLICE_F_MOVE)
-	while ((sz = splice(fdi, NULL, fdo, off, cnt(off[0], rlim), SPF)) > 0) {
-		char szs[64];
-		size_t szl;
-		szl = snprintf(szs, sizeof(szs), "%zd %zd\n", sz, off[0]);
-		write(fdb, szs, szl);
-	}
+	while (splice(fdi, NULL, fdo, off, cnt(off[0], rlim), SPF) > 0);
 	/* and we're out */
 	close(fdo);
 	close(fdi);
