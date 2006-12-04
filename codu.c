@@ -85,28 +85,14 @@ cnt(off_t off, size_t rlim)
 	return rlim - off;
 }
 
-static inline int
-check_page(const char *buf)
-{
-/* return non-0 if page contains stuff other than zeroes */
-	/* assume alignment */
-	const long int *p = (const void*)buf;
-	const long int *e = (const void*)(buf + PGSZ);
-	while (p < e && *p++ == 0);
-	return p < e;
-}
-
 static inline off_t
 find_skip(const char *buf, size_t bsz)
 {
-	off_t res = 0;
-	while (res + PGSZ < bsz) {
-		if (check_page(buf + res)) {
-			break;
-		}
-		res += PGSZ;
-	}
-	return res;
+	/* assume alignment */
+	const long int *p = (const void*)buf;
+	const long int *e = (const void*)(buf + bsz);
+	while (p < e && *p++ == 0);
+	return (const char*)((const void*)(p - 1)) - buf;
 }
 
 static int
@@ -206,7 +192,7 @@ main(int argc, char *argv[])
 	snprintf(cnm, sizeof(cnm), "core-%s.%s.%s.%s.%s.dump",
 		 PROG, USER, HOST, TIME, PID);
 	/* and dump it */
-	dump_core(cnm, clim);
+	dump_core_sparsely(cnm, clim);
 	return 0;
 }
 
