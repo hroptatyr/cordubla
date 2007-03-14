@@ -78,22 +78,35 @@ cnt(off_t off, size_t rlim)
 {
 /* the usual page size we want to cp over */
 #define PGSZ	(4096)
-#define CNT	(2048000)
+#define CNT	(64 * PGSZ)
 	if (off + CNT < rlim) {
 		return CNT;
 	}
 	return rlim - off;
 }
 
-static inline off_t
-find_skip(const char *buf, size_t bsz)
+static inline int
+incl_page_p(const char *buf, size_t pgsz)
 {
 	/* assume alignment */
 	const long int *p = (const void*)buf;
-	const long int *e = (const void*)(buf + bsz);
+	const long int *e = (const void*)(buf + pgsz);
 	while (p < e && *p++ == 0);
-	return (const char*)((const void*)(p - 1)) - buf;
+	return p < e;
 }
+
+static inline long int
+find_skip(const char *buf, size_t bsz)
+{
+/* we can take 64 pages max */
+	long int res = 0;
+	for (int i = 0; i < 64; i++) {
+		int sk = incl_page_p(buf + PGSZ * i, bsz > PGSZ ? PGSZ : bsz);
+		res |= (long int)sk << i;
+	}
+	return res;
+}
+
 
 static int
 dump_core_sparsely(const char *file, size_t rlim)
@@ -113,14 +126,39 @@ dump_core_sparsely(const char *file, size_t rlim)
 		return -1;
 	}
 	/* copy fdi to fdo */
-#define SPF	(SPLICE_F_MORE | SPLICE_F_MOVE)
 	while ((sz = read(fdi, buf, cnt(off, rlim))) > 0) {
 		/* find longest zero sequence, page wise */
-		off_t sk = find_skip(buf, sz);
-		if (sk) {
-			lseek(fdo, sk, SEEK_CUR);
+		long int skmsk = find_skip(buf, sz);
+		long int cnt = 0;
+		const char *p = buf;
+#if 0
+/* too optimal */
+		/* trivial cases first */
+		if (skmsk == 0) {
+			lseek(fdo, 64 * PGSZ, SEEK_CUR);
+			continue;
+		} else if ((skmsk & 0xffffffff) == 0) {
+			lseek(fdo, 32 * PGSZ, SEEK_CUR);
+			skmsk >>= (cnt = 32);
+		} else if ((skmsk & 0xffff) == 0) {
+			lseek(fdo, 16 * PGSZ, SEEK_CUR);
+			skmsk >>= (cnt = 16);
+		} else if ((skmsk & 0xff) == 0) {
+			lseek(fdo, 8 * PGSZ, SEEK_CUR);
+			skmsk >>= (cnt = 8);
 		}
-		off += write(fdo, buf + sk, sz - sk);
+#endif
+		while (cnt++ < 64 && sz > 0) {
+			size_t pgsz = sz > PGSZ ? PGSZ : sz;
+			if (skmsk & 1) {
+				off += write(fdo, p, pgsz);
+			} else {
+				lseek(fdo, pgsz, SEEK_CUR);
+			}
+			p += pgsz;
+			sz -= pgsz;
+			skmsk >>= 1;
+		}
 	}
 	/* and we're out */
 	close(fdo);
