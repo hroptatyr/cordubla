@@ -131,33 +131,35 @@ dump_core_sparsely(const char *file, size_t rlim)
 		long int skmsk = find_skip(buf, sz);
 		long int cnt = 0;
 		const char *p = buf;
-#if 0
-/* too optimal */
-		/* trivial cases first */
-		if (skmsk == 0) {
-			lseek(fdo, 64 * PGSZ, SEEK_CUR);
-			continue;
-		} else if ((skmsk & 0xffffffff) == 0) {
-			lseek(fdo, 32 * PGSZ, SEEK_CUR);
-			skmsk >>= (cnt = 32);
-		} else if ((skmsk & 0xffff) == 0) {
-			lseek(fdo, 16 * PGSZ, SEEK_CUR);
-			skmsk >>= (cnt = 16);
-		} else if ((skmsk & 0xff) == 0) {
-			lseek(fdo, 8 * PGSZ, SEEK_CUR);
-			skmsk >>= (cnt = 8);
-		}
-#endif
-		while (cnt++ < 64 && sz > 0) {
-			size_t pgsz = sz > PGSZ ? PGSZ : sz;
-			if (skmsk & 1) {
-				off += write(fdo, p, pgsz);
-			} else {
-				lseek(fdo, pgsz, SEEK_CUR);
+
+		while (cnt < 64 && sz > 0) {
+			if (sz < 2 * PGSZ) {
+				off += write(fdo, p, sz);
+				break;
 			}
-			p += pgsz;
-			sz -= pgsz;
-			skmsk >>= 1;
+			/* otherwise */
+			switch (skmsk & 3) {
+			case 0:
+				lseek(fdo, 2 * PGSZ, SEEK_CUR);
+				break;
+			case 1:
+				(void)write(fdo, p, PGSZ);
+				(void)lseek(fdo, PGSZ, SEEK_CUR);
+				break;
+			case 2:
+				(void)lseek(fdo, PGSZ, SEEK_CUR);
+				(void)write(fdo, p, PGSZ);
+				break;
+			case 3:
+				(void)write(fdo, p, 2 * PGSZ);
+				break;
+			default:
+				break;
+			}
+			p += 2 * PGSZ;
+			off += 2 * PGSZ;
+			skmsk >>= 2;
+			cnt++;
 		}
 	}
 	/* and we're out */
