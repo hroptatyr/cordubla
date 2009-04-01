@@ -169,6 +169,7 @@ dump_core_sparsely(const char *file, size_t rlim)
 }
 
 static int
+__attribute__((unused))
 dump_core(const char *file, size_t rlim)
 {
 #define CFILE_FLAGS	(O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_EXCL)
