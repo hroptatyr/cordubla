@@ -7,6 +7,18 @@
 #include <unistd.h>
 #include <errno.h>
 
+/* fuck ugly */
+#if defined DEBUG
+static int fdb __attribute__((unused));
+static char dbg_buf[256];
+static size_t dbg_len;
+#define DBG_OUT(args...)						\
+	do {								\
+		dbg_len = snprintf(dbg_buf, sizeof(dbg_buf), args);	\
+		write(fdb, dbg_buf, dbg_len);				\
+	} while (0)
+#endif	/* DEBUG */
+
 
 /* special purpose */
 #include <pwd.h>
@@ -74,13 +86,10 @@ mkdir_core_dir(const char *uid)
 }
 
 static inline size_t
-cnt(off_t off, size_t rlim)
+cnt(off_t off, size_t rlim, size_t max)
 {
-/* the usual page size we want to cp over */
-#define PGSZ	(4096)
-#define CNT	(64 * PGSZ)
-	if (off + CNT < rlim) {
-		return CNT;
+	if (off + max < rlim) {
+		return max;
 	}
 	return rlim - off;
 }
@@ -96,12 +105,12 @@ incl_page_p(const char *buf, size_t pgsz)
 }
 
 static inline long int
-find_skip(const char *buf, size_t bsz)
+find_skip(const char *buf, size_t bsz, size_t pgsz)
 {
 /* we can take 64 pages max */
 	long int res = 0;
 	for (int i = 0; i < 64; i++) {
-		int sk = incl_page_p(buf + PGSZ * i, bsz > PGSZ ? PGSZ : bsz);
+		int sk = incl_page_p(buf + pgsz * i, bsz > pgsz ? pgsz : bsz);
 		res |= (long int)sk << i;
 	}
 	return res;
@@ -111,6 +120,11 @@ find_skip(const char *buf, size_t bsz)
 static int
 dump_core_sparsely(const char *file, size_t rlim)
 {
+/* the usual page size we want to cp over */
+#define PGSZ	(4096)
+/* number of pages to process at a time */
+#define CNT	(500 * PGSZ)
+/* flags for the core file */
 #define CFILE_FLAGS	(O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_EXCL)
 	int fdi, fdo;
 	ssize_t sz;
@@ -126,12 +140,14 @@ dump_core_sparsely(const char *file, size_t rlim)
 		return -1;
 	}
 	/* copy fdi to fdo */
-	while ((sz = read(fdi, buf, cnt(off, rlim))) > 0) {
+	while ((sz = read(fdi, buf, cnt(off, rlim, CNT))) > 0) {
 		/* find longest zero sequence, page wise */
-		long int skmsk = find_skip(buf, sz);
+		long int skmsk = find_skip(buf, sz, PGSZ);
 		long int cnt = 0;
 		const char *p = buf;
-
+#if defined DEBUG
+		DBG_OUT("%zd %zd\n", off, sz);
+#endif	/* DEBUG */
 		while (cnt < 64 && sz > 0) {
 			if (sz < 2 * PGSZ) {
 				off += write(fdo, p, sz);
@@ -185,7 +201,7 @@ dump_core(const char *file, size_t rlim)
 	}
 	/* copy fdi to fdo */
 #define SPF	(SPLICE_F_MORE | SPLICE_F_MOVE)
-	while (splice(fdi, NULL, fdo, off, cnt(off[0], rlim), SPF) > 0);
+	while (splice(fdi, NULL, fdo, off, cnt(off[0], rlim, CNT), SPF) > 0);
 	/* and we're out */
 	close(fdo);
 	close(fdi);
@@ -214,6 +230,10 @@ main(int argc, char *argv[])
 		return 1;
 	}
 
+#if defined DEBUG
+	fdb = open("/tmp/dbg", O_CREAT | O_WRONLY | O_APPEND, 0644);
+#endif	/* DEBUG */
+
 	/* create the directories and cd there */
 	if (mkdir_core_dir(USER) < 0) {
 		return 1;
@@ -234,6 +254,9 @@ main(int argc, char *argv[])
 		 PROG, USER, HOST, TIME, PID);
 	/* and dump it */
 	dump_core_sparsely(cnm, clim);
+#if defined DEBUG
+	close(fdb);
+#endif	/* DEBUG */
 	return 0;
 }
 
