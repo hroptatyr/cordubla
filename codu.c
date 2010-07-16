@@ -113,6 +113,7 @@ find_skip(const char *buf, size_t bsz, size_t pgsz)
 		int sk = incl_page_p(buf + pgsz * i, bsz > pgsz ? pgsz : bsz);
 		res |= (long int)sk << i;
 	}
+	DBG_OUT("skip: %lx\n", (long unsigned int)res);
 	return res;
 }
 
@@ -230,10 +231,6 @@ main(int argc, char *argv[])
 		return 1;
 	}
 
-#if defined DEBUG
-	fdb = open("/tmp/dbg", O_CREAT | O_WRONLY | O_APPEND, 0644);
-#endif	/* DEBUG */
-
 	/* create the directories and cd there */
 	if (mkdir_core_dir(USER) < 0) {
 		return 1;
@@ -248,6 +245,10 @@ main(int argc, char *argv[])
 	/* lose some privileges */
 	uid = strtoul(USER, NULL, 10);
 	setuid(uid);
+
+#if defined DEBUG
+	fdb = open("/tmp/dbg", O_CREAT | O_WRONLY | O_APPEND, 0644);
+#endif	/* DEBUG */
 
 	/* core file name */
 	snprintf(cnm, sizeof(cnm), "core-%s.%s.%s.%s.%s.dump",
