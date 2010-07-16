@@ -187,6 +187,8 @@ dump_core_sparsely(const char *file, size_t rlim)
 	return 0;
 }
 
+#if 0
+/* doesnt handle sparsity */
 static int
 __attribute__((unused))
 dump_core(const char *file, size_t rlim)
@@ -210,6 +212,7 @@ dump_core(const char *file, size_t rlim)
 	close(fdi);
 	return 0;
 }
+#endif
 
 static ssize_t
 get_cwd(char *buf, size_t bsz, const char *pid)
