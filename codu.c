@@ -211,6 +211,54 @@ dump_core(const char *file, size_t rlim)
 	return 0;
 }
 
+static ssize_t
+get_cwd(char *buf, size_t bsz, const char *pid)
+{
+	char cwd_link[PATH_MAX];
+	ssize_t cwd_len;
+
+	snprintf(cwd_link, sizeof(cwd_link), "/proc/%s/cwd", pid);
+	cwd_len = readlink(cwd_link, buf, bsz);
+	if (cwd_len > 0) {
+		buf[cwd_len] = '\0';
+	}
+	return cwd_len;
+}
+
+static int
+daemonise(void)
+{
+	int fd;
+	pid_t __attribute__((unused)) pid;
+
+	switch (pid = fork()) {
+	case -1:
+		return -1;
+	case 0:
+		break;
+	default:
+		DBG_OUT("Successfully bore a squaller: %d\n", pid);
+		exit(0);
+	}
+
+	if (setsid() == -1) {
+		return -1;
+	}
+	for (int i = getdtablesize(); i>=0; --i) {
+		/* close all descriptors */
+		close(i);
+	}
+	if ((fd = open("/dev/null", O_RDWR, 0)) >= 0) {
+		(void)dup2(fd, STDIN_FILENO);
+		(void)dup2(fd, STDOUT_FILENO);
+		(void)dup2(fd, STDERR_FILENO);
+		if (fd > STDERR_FILENO) {
+			(void)close(fd);
+		}
+	}
+	return 0;
+}
+
 
 /* expected to be called like %u %h %t %p %c %e, use
  * sysctl -w kernel.core_pattern="|/path/to/codu %u %h %t %p %c %e" */
@@ -223,7 +271,10 @@ main(int argc, char *argv[])
 #define PID	(argv[4])
 #define CLIM	(argv[5])
 #define PROG	(argv[6])
+	char cwd[PATH_MAX];
 	char cnm[PATH_MAX];
+	char cnm_full[PATH_MAX];
+	char cnm_orig[PATH_MAX];
 	size_t clim;
 	int uid;
 
@@ -244,6 +295,9 @@ main(int argc, char *argv[])
 		return 0;
 	}
 
+	/* get the working directory of the crashing process */
+	get_cwd(cwd, sizeof(cwd), PID);
+
 	/* lose some privileges */
 	uid = strtoul(USER, NULL, 10);
 	setuid(uid);
@@ -257,6 +311,22 @@ main(int argc, char *argv[])
 		 PROG, USER, HOST, TIME, PID);
 	/* and dump it */
 	dump_core_sparsely(cnm, clim);
+
+	/* links */
+	snprintf(cnm_full, sizeof(cnm_full), "%s/%s", cwd, cnm);
+	snprintf(cnm_orig, sizeof(cnm_orig), "%s.orig", cnm);
+	symlink(cnm_full, cnm_orig);
+	/* change into the crashing directory */
+	chdir(cwd);
+	/* create a symlink as well */
+	snprintf(cnm_full, sizeof(cnm_full), CORE_DIR "/%s/%s", USER, cnm);
+	symlink(cnm_full, cnm);
+
+	if (daemonise()) {
+		/* do user space shit here */
+		;
+	}
+
 #if defined DEBUG
 	close(fdb);
 #endif	/* DEBUG */
