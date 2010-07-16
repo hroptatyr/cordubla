@@ -12,11 +12,13 @@
 static int fdb __attribute__((unused));
 static char dbg_buf[256];
 static size_t dbg_len;
-#define DBG_OUT(args...)						\
+# define DBG_OUT(args...)						\
 	do {								\
 		dbg_len = snprintf(dbg_buf, sizeof(dbg_buf), args);	\
 		write(fdb, dbg_buf, dbg_len);				\
 	} while (0)
+#else
+# define DBG_OUT(args...)
 #endif	/* DEBUG */
 
 
