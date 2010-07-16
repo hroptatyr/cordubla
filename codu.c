@@ -36,6 +36,18 @@ user_name(int uid)
 	return un;
 }
 
+static const char*
+user_home(int uid)
+{
+	/* just clip the fucker */
+	static char un[PATH_MAX] = {0};
+	struct passwd *pw = getpwuid(uid);
+	if (pw->pw_dir) {
+		strncpy(un, pw->pw_dir, sizeof(un));
+	}
+	return un;
+}
+
 
 /* configurable? */
 #define CORE_DIR	"/tmp/core"
@@ -236,6 +248,7 @@ daemonise(void)
 
 	switch (pid = fork()) {
 	case -1:
+		DBG_OUT("fork fucked\n");
 		return -1;
 	case 0:
 		break;
@@ -259,10 +272,16 @@ daemonise(void)
 			(void)close(fd);
 		}
 	}
+
+#if defined DEBUG
+	fdb = open("/tmp/dbg", O_CREAT | O_WRONLY | O_APPEND, 0644);
+#endif	/* DEBUG */
 	return 0;
 }
 
 
+static void magic(int uid);
+
 /* expected to be called like %u %h %t %p %c %e, use
  * sysctl -w kernel.core_pattern="|/path/to/codu %u %h %t %p %c %e" */
 int
@@ -325,15 +344,28 @@ main(int argc, char *argv[])
 	snprintf(cnm_full, sizeof(cnm_full), CORE_DIR "/%s/%s", USER, cnm);
 	symlink(cnm_full, cnm);
 
-	if (daemonise()) {
-		/* do user space shit here */
-		;
+	if (daemonise() < 0) {
+		return 0;
 	}
+
+	/* do user space shit */
+	magic(uid);
 
 #if defined DEBUG
 	close(fdb);
 #endif	/* DEBUG */
 	return 0;
+}
+
+static void
+magic(int uid)
+{
+	/* read ~/.codurc */
+	const char *uho = user_home(uid);
+	char uhodir[PATH_MAX];
+	snprintf(uhodir, sizeof(uhodir), "/%s/.codurc", uho);
+	DBG_OUT("user pref file: %s\n", uhodir);
+	return;
 }
 
 /* codu.c ends here */
