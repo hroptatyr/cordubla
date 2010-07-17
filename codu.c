@@ -35,7 +35,7 @@ dbg_close(void)
 #else  /* !DEBUG */
 # define DBG_OUT(args...)
 static inline void
-dbg_open(int __attribute__((unused)))
+dbg_open(int __attribute__((unused)) fl)
 {
 	return;
 }
