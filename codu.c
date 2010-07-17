@@ -144,16 +144,19 @@ incl_page_p(const char *buf, size_t pgsz)
 	return p < e;
 }
 
-static inline long int
+static inline long unsigned int
 find_skip(const char *buf, size_t bsz, size_t pgsz)
 {
 /* we can take 64 pages max */
 	long int res = 0;
-	for (int i = 0; i < 64; i++) {
-		int sk = incl_page_p(buf + pgsz * i, bsz > pgsz ? pgsz : bsz);
+	const char *bend = buf + bsz;
+	for (int i = 0; buf < bend; i++) {
+		size_t szl = bend - buf > pgsz ? pgsz : bend - buf;
+		int sk = incl_page_p(buf, szl);
 		res |= (long int)sk << i;
+		buf += szl;
 	}
-	DBG_OUT("bsz: %zu  skip: %lx\n", bsz, (long unsigned int)res);
+	DBG_OUT("skip: %lx\n", (long unsigned int)res);
 	return res;
 }
 
@@ -200,7 +203,7 @@ dump_core_sparsely(const char *file, size_t rlim)
 	/* copy fdi to fdo */
 	while ((sz = fill_buffer(fdi, buf, cnt(off, rlim, CNT))) > 0) {
 		/* find longest zero sequence, page wise */
-		long int skmsk = find_skip(buf, sz, PGSZ);
+		long unsigned int skmsk = find_skip(buf, sz, PGSZ);
 		long int cnt = 0;
 		const char *p = buf;
 		DBG_OUT("%zd %zd\n", off, sz);
