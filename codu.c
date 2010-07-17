@@ -9,7 +9,7 @@
 
 /* fuck ugly */
 #if defined DEBUG
-static int fdb __attribute__((unused));
+static volatile int fdb;
 static char dbg_buf[256];
 static size_t dbg_len;
 # define DBG_OUT(args...)						\
@@ -17,8 +17,34 @@ static size_t dbg_len;
 		dbg_len = snprintf(dbg_buf, sizeof(dbg_buf), args);	\
 		write(fdb, dbg_buf, dbg_len);				\
 	} while (0)
-#else
+
+static inline void
+dbg_open(int fl)
+{
+	fdb = open("/tmp/dbg", O_CREAT | O_WRONLY | fl, 0644);
+	return;
+}
+
+static inline void
+dbg_close(void)
+{
+	close(fdb);
+	return;
+}
+
+#else  /* !DEBUG */
 # define DBG_OUT(args...)
+static inline void
+dbg_open(int __attribute__((unused)))
+{
+	return;
+}
+
+static inline void
+dbg_close(void)
+{
+	return;
+}
 #endif	/* DEBUG */
 
 
@@ -127,10 +153,21 @@ find_skip(const char *buf, size_t bsz, size_t pgsz)
 		int sk = incl_page_p(buf + pgsz * i, bsz > pgsz ? pgsz : bsz);
 		res |= (long int)sk << i;
 	}
-	DBG_OUT("skip: %lx\n", (long unsigned int)res);
+	DBG_OUT("bsz: %zu  skip: %lx\n", bsz, (long unsigned int)res);
 	return res;
 }
 
+static inline ssize_t
+fill_buffer(int fd, char *restrict buf, size_t max)
+{
+	ssize_t tot = 0;
+	ssize_t sz;
+	while ((tot < max) &&
+	       (sz = read(fd, buf + tot, max - tot)) > 0) {
+		tot += sz;
+	}
+	return tot;
+}
 
 static int
 dump_core_sparsely(const char *file, size_t rlim)
@@ -138,7 +175,7 @@ dump_core_sparsely(const char *file, size_t rlim)
 /* the usual page size we want to cp over */
 #define PGSZ	(4096)
 /* number of pages to process at a time */
-#define CNT	(500 * PGSZ)
+#define CNT	(64 * PGSZ)
 /* flags for the core file */
 #define CFILE_FLAGS	(O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_EXCL)
 	int fdi, fdo;
@@ -154,15 +191,19 @@ dump_core_sparsely(const char *file, size_t rlim)
 		/* no need to close fdi */
 		return -1;
 	}
+	/* coroutine:
+	 * reading from fdi to buf first
+	 * yielding 64k pages of kernel core dump goodness
+	 * coroutine:
+	 * determining the skip mask of */
+
 	/* copy fdi to fdo */
-	while ((sz = read(fdi, buf, cnt(off, rlim, CNT))) > 0) {
+	while ((sz = fill_buffer(fdi, buf, cnt(off, rlim, CNT))) > 0) {
 		/* find longest zero sequence, page wise */
 		long int skmsk = find_skip(buf, sz, PGSZ);
 		long int cnt = 0;
 		const char *p = buf;
-#if defined DEBUG
 		DBG_OUT("%zd %zd\n", off, sz);
-#endif	/* DEBUG */
 		while (cnt < 64 && sz > 0) {
 			if (sz < 2 * PGSZ) {
 				off += write(fdo, p, sz);
@@ -260,8 +301,8 @@ daemonise(void)
 	if (setsid() == -1) {
 		return -1;
 	}
-	for (int i = getdtablesize(); i>=0; --i) {
-		/* close all descriptors */
+	/* close the debugging sock and all other descriptors */
+	for (int i = getdtablesize(); i >= 0; --i) {
 		close(i);
 	}
 	if ((fd = open("/dev/null", O_RDWR, 0)) >= 0) {
@@ -272,10 +313,8 @@ daemonise(void)
 			(void)close(fd);
 		}
 	}
-
-#if defined DEBUG
-	fdb = open("/tmp/dbg", O_CREAT | O_WRONLY | O_APPEND, 0644);
-#endif	/* DEBUG */
+	/* reopen the debugging socket */
+	dbg_open(O_APPEND);
 	return 0;
 }
 
@@ -324,9 +363,7 @@ main(int argc, char *argv[])
 	uid = strtoul(USER, NULL, 10);
 	setuid(uid);
 
-#if defined DEBUG
-	fdb = open("/tmp/dbg", O_CREAT | O_WRONLY | O_APPEND, 0644);
-#endif	/* DEBUG */
+	dbg_open(O_TRUNC);
 
 	/* core file name */
 	snprintf(cnm, sizeof(cnm), "core-%s.%s.%s.%s.%s.dump",
@@ -350,10 +387,8 @@ main(int argc, char *argv[])
 
 	/* do user space shit */
 	magic(uid);
-
-#if defined DEBUG
-	close(fdb);
-#endif	/* DEBUG */
+	/* close debugging socket, maybe */
+	dbg_close();
 	return 0;
 }
 
