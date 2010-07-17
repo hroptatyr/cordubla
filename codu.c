@@ -214,18 +214,18 @@ dump_core_sparsely(const char *file, size_t rlim)
 			}
 			/* otherwise */
 			switch (skmsk & 3) {
-			case 0:
+			case 0/*00*/:
 				lseek(fdo, 2 * PGSZ, SEEK_CUR);
 				break;
-			case 1:
+			case 1/*01*/:
 				(void)write(fdo, p, PGSZ);
 				(void)lseek(fdo, PGSZ, SEEK_CUR);
 				break;
-			case 2:
+			case 2/*10*/:
 				(void)lseek(fdo, PGSZ, SEEK_CUR);
 				(void)write(fdo, p, PGSZ);
 				break;
-			case 3:
+			case 3/*11*/:
 				(void)write(fdo, p, 2 * PGSZ);
 				break;
 			default:
@@ -233,8 +233,9 @@ dump_core_sparsely(const char *file, size_t rlim)
 			}
 			p += 2 * PGSZ;
 			off += 2 * PGSZ;
+			sz -= 2 * PGSZ;
 			skmsk >>= 2;
-			cnt++;
+			cnt += 2;
 		}
 	}
 	/* and we're out */
