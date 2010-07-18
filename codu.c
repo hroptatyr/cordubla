@@ -56,22 +56,24 @@ static const char*
 user_name(int uid)
 {
 	/* just clip the fucker */
-	static char un[9] = {0};
-	struct passwd *pw = getpwuid(uid);
-	strncpy(un, pw->pw_name, sizeof(un) - 1);
-	return un;
+	struct passwd pw[1], *pwr;
+	static char aux[NSS_BUFLEN_PASSWD] = {0};
+	if (getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) {
+		return pw->pw_name;
+	}
+	return aux;
 }
 
 static const char*
 user_home(int uid)
 {
 	/* just clip the fucker */
-	static char un[PATH_MAX] = {0};
-	struct passwd *pw = getpwuid(uid);
-	if (pw->pw_dir) {
-		strncpy(un, pw->pw_dir, sizeof(un));
+	struct passwd pw[1], *pwr;
+	static char aux[NSS_BUFLEN_PASSWD] = {0};
+	if (getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0 && pw->pw_dir) {
+		return pw->pw_dir;
 	}
-	return un;
+	return aux;
 }
 
 
