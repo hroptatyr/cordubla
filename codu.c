@@ -340,7 +340,7 @@ daemonise(void)
 }
 
 
-static void magic(int uid);
+static void magic(int uid, const char *cwd, const char *cnm, char *argv[]);
 
 /* expected to be called like %u %h %t %p %c %e, use
  * sysctl -w kernel.core_pattern="|/path/to/codu %u %h %t %p %c %e" */
@@ -355,8 +355,6 @@ main(int argc, char *argv[])
 #define PROG	(argv[6])
 	char cwd[PATH_MAX];
 	char cnm[PATH_MAX];
-	char cnm_full[PATH_MAX];
-	char cnm_orig[PATH_MAX];
 	size_t clim;
 	int uid;
 
@@ -392,6 +390,27 @@ main(int argc, char *argv[])
 	/* and dump it */
 	dump_core_sparsely(cnm, clim);
 
+	if (daemonise() < 0) {
+		return 0;
+	}
+
+	/* do user space shit */
+	magic(uid, cwd, cnm, argv);
+
+	/* close debugging socket, maybe */
+	dbg_close();
+	return 0;
+}
+
+static void
+magic(int uid, const char *cwd, const char *cnm, char *argv[])
+{
+	/* read ~/.codurc */
+	const char *uho = user_home(uid);
+	char cnm_full[PATH_MAX];
+	char cnm_orig[PATH_MAX];
+	char uhodir[PATH_MAX];
+
 	/* links */
 	snprintf(cnm_full, sizeof(cnm_full), "%s/%s", cwd, cnm);
 	snprintf(cnm_orig, sizeof(cnm_orig), "%s.orig", cnm);
@@ -401,24 +420,8 @@ main(int argc, char *argv[])
 	/* create a symlink as well */
 	snprintf(cnm_full, sizeof(cnm_full), CORE_DIR "/%s/%s", USER, cnm);
 	symlink(cnm_full, cnm);
-	if (daemonise() < 0) {
-		return 0;
-	}
 
-	/* do user space shit */
-	magic(uid);
-
-	/* close debugging socket, maybe */
-	dbg_close();
-	return 0;
-}
-
-static void
-magic(int uid)
-{
-	/* read ~/.codurc */
-	const char *uho = user_home(uid);
-	char uhodir[PATH_MAX];
+	/* find the user's codurc file */
 	snprintf(uhodir, sizeof(uhodir), "/%s/.codurc", uho);
 	DBG_OUT("user pref file: %s\n", uhodir);
 	return;
