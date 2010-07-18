@@ -178,65 +178,44 @@ write_buffer(int fd, const char *buf, size_t bsz, size_t pgsz)
 /* write stuff in BUF (of size BSZ) into FD, skip zero pages
  * of size PGSZ and return the number of written pages*/
 	long unsigned int skmsk = find_skip(buf, bsz, pgsz);
-	const char *ben = buf + bsz;
+	const char *ben;
 
 	/* just a quick seek beforehand? */
 	if (skmsk == 0) {
 		lseek(fd, bsz, SEEK_CUR);
 		DBG_OUT("w:0 s:64\n");
 		return;
-	} else if ((skmsk & 0xffffffff) == 0) {
-		lseek(fd, 32 * pgsz, SEEK_CUR);
-		buf += 32 * pgsz;
-		skmsk >>= 32;
-		DBG_OUT("w:0 s:32\n");
-	} else if ((skmsk & 0xffff) == 0) {
-		lseek(fd, 16 * pgsz, SEEK_CUR);
-		buf += 16 * pgsz;
-		skmsk >>= 16;
-		DBG_OUT("w:0 s:16\n");
+	} else if (skmsk == 0xffffffffffffffff) {
+		write(fd, buf, bsz);
+		DBG_OUT("w:64 s:0\n");
+		return;
 	}
+	ben = buf + bsz;
 	while (buf < ben) {
-		if (buf + 1 * pgsz > ben) {
-			write(fd, buf, ben - buf);
-			DBG_OUT("w:1\n");
+		int f1, f0;
+
+		f1 = ffsl(skmsk);
+		if (f1 == 0) {
+			/* just seek to bsz */
+			lseek(fd, ben - buf, SEEK_CUR);
 			break;
-		} else if (buf + 2 * pgsz > ben) {
-			write(fd, buf, ben - buf);
-			DBG_OUT("w:2\n");
-			break;
+		} else if (f1 > 1) {
+			lseek(fd, (f1 - 1) * pgsz, SEEK_CUR);
+			skmsk >>= (f1 - 1);
+			buf += (f1 - 1) * pgsz;
+			DBG_OUT("s:%d\n", f1 - 1);
 		}
-		/* otherwise */
-		switch (skmsk & 3) {
-		case 0/*00*/:
-			lseek(fd, 2 * pgsz, SEEK_CUR);
-			DBG_OUT("00 w:0 s:2\n");
+		f0 = ffsl(~skmsk);
+		if (f0 == 0) {
+			/* just write to bsz */
+			write(fd, buf, ben - buf);
 			break;
-		case 1/*01*/:
-			(void)write(fd, buf, pgsz);
-			(void)lseek(fd, pgsz, SEEK_CUR);
-			DBG_OUT("01 w:1 s:1\n");
-			break;
-		case 2/*10*/:
-			(void)lseek(fd, pgsz, SEEK_CUR);
-			(void)write(fd, buf, pgsz);
-			DBG_OUT("10 w:1 s:1\n");
-			break;
-		case 3/*11*/:
-			(void)write(fd, buf, 2 * pgsz);
-			DBG_OUT("11 w:2 s:0\n");
-			break;
-		default:
-			DBG_OUT("uh oh\n");
-			break;
+		} else if (f0 > 1/*must be true*/) {
+			write(fd, buf, (f0 - 1) * pgsz);
+			skmsk >>= (f0 - 1);
+			buf += (f0 - 1) * pgsz;
+			DBG_OUT("w:%d\n", f0 - 1);
 		}
-		buf += 2 * pgsz;
-		skmsk >>= 2;
-	}
-	if (bsz < 64 * pgsz) {
-		struct stat st[1];
-		fstat(fd, st);
-		DBG_OUT("last bloke %zu %zu\n", st->st_size, st->st_blocks);
 	}
 	return;
 }
