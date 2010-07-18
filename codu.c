@@ -198,23 +198,25 @@ write_buffer(int fd, const char *buf, size_t bsz, size_t pgsz)
 		if (f1 == 0) {
 			/* just seek to bsz */
 			lseek(fd, ben - buf, SEEK_CUR);
+			DBG_OUT("s:? %zd\n", ben - buf);
 			break;
 		} else if (f1 > 1) {
 			lseek(fd, (f1 - 1) * pgsz, SEEK_CUR);
 			skmsk >>= (f1 - 1);
 			buf += (f1 - 1) * pgsz;
-			DBG_OUT("s:%d\n", f1 - 1);
+			DBG_OUT("s:%d %zu\n", f1 - 1, (f1 - 1) * pgsz);
 		}
 		f0 = ffsl(~skmsk);
 		if (f0 == 0) {
 			/* just write to bsz */
 			write(fd, buf, ben - buf);
+			DBG_OUT("w:? %zd\n", ben - buf);
 			break;
 		} else if (f0 > 1/*must be true*/) {
 			write(fd, buf, (f0 - 1) * pgsz);
 			skmsk >>= (f0 - 1);
 			buf += (f0 - 1) * pgsz;
-			DBG_OUT("w:%d\n", f0 - 1);
+			DBG_OUT("w:%d %zu\n", f0 - 1, (f0 - 1) * pgsz);
 		}
 	}
 	return;
@@ -323,7 +325,7 @@ daemonise(void)
 		return -1;
 	}
 	/* close the debugging sock and all other descriptors */
-	for (int i = getdtablesize(); i >= 0; --i) {
+	for (int i = 6; i >= 0; --i) {
 		close(i);
 	}
 	if ((fd = open("/dev/null", O_RDWR, 0)) >= 0) {
