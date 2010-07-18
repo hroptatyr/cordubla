@@ -6,6 +6,12 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
+/* special purpose, normal entry is getpwuid_r() but
+ * we need save every second under heavy load so fuck all that
+ * nsswitch lookup bobsmyuncle and just use nscd */
+#include <pwd.h>
+#include "me_nscd_proto.h"
 
 /* fuck ugly */
 #if defined DEBUG
@@ -48,17 +54,13 @@ dbg_close(void)
 #endif	/* DEBUG */
 
 
-/* special purpose */
-#include <pwd.h>
-#include <string.h>
-
 static const char*
 user_name(int uid)
 {
 	/* just clip the fucker */
 	struct passwd pw[1], *pwr;
 	static char aux[NSS_BUFLEN_PASSWD] = {0};
-	if (getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) {
+	if (__nscd_getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) {
 		return pw->pw_name;
 	}
 	return aux;
@@ -70,7 +72,8 @@ user_home(int uid)
 	/* just clip the fucker */
 	struct passwd pw[1], *pwr;
 	static char aux[NSS_BUFLEN_PASSWD] = {0};
-	if (getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0 && pw->pw_dir) {
+	if ((__nscd_getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) &&
+	    (pw->pw_dir != NULL)) {
 		return pw->pw_dir;
 	}
 	return aux;
