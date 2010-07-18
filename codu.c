@@ -172,6 +172,58 @@ fill_buffer(int fd, char *restrict buf, size_t max)
 	return tot;
 }
 
+static inline void
+write_buffer(int fd, const char *buf, size_t bsz, size_t pgsz)
+{
+/* write stuff in BUF (of size BSZ) into FD, skip zero pages
+ * of size PGSZ and return the number of written pages*/
+	long unsigned int skmsk = find_skip(buf, bsz, pgsz);
+	const char *ben = buf + bsz;
+
+	while (buf < ben) {
+		if (buf + 1 * pgsz > ben) {
+			write(fd, buf, ben - buf);
+			break;
+		} else if (buf + 2 * pgsz > ben) {
+			write(fd, buf, ben - buf);
+			break;
+		} else if (skmsk == 0) {
+			lseek(fd, bsz, SEEK_CUR);
+			break;
+		} else if ((skmsk & 0xffffffff) == 0) {
+			lseek(fd, 32 * pgsz, SEEK_CUR);
+			buf += 32 * pgsz;
+			skmsk >>= 32;
+		} else if ((skmsk & 0xffff) == 0) {
+			lseek(fd, 16 * pgsz, SEEK_CUR);
+			buf += 16 * pgsz;
+			skmsk >>= 16;
+		}
+		/* otherwise */
+		switch (skmsk & 3) {
+		case 0/*00*/:
+			lseek(fd, 2 * pgsz, SEEK_CUR);
+			break;
+		case 1/*01*/:
+			(void)write(fd, buf, pgsz);
+			(void)lseek(fd, pgsz, SEEK_CUR);
+			break;
+		case 2/*10*/:
+			(void)lseek(fd, pgsz, SEEK_CUR);
+			(void)write(fd, buf, pgsz);
+			break;
+		case 3/*11*/:
+			(void)write(fd, buf, 2 * pgsz);
+			break;
+		default:
+			break;
+		}
+		buf += 2 * pgsz;
+		skmsk >>= 2;
+	}
+	return;
+}
+
 static int
 dump_core_sparsely(const char *file, size_t rlim)
 {
@@ -202,41 +254,9 @@ dump_core_sparsely(const char *file, size_t rlim)
 
 	/* copy fdi to fdo */
 	while ((sz = fill_buffer(fdi, buf, cnt(off, rlim, CNT))) > 0) {
-		/* find longest zero sequence, page wise */
-		long unsigned int skmsk = find_skip(buf, sz, PGSZ);
-		long int cnt = 0;
-		const char *p = buf;
+		write_buffer(fdo, buf, sz, PGSZ);
 		DBG_OUT("%zd %zd\n", off, sz);
-		while (cnt < 64 && sz > 0) {
-			if (sz < 2 * PGSZ) {
-				off += write(fdo, p, sz);
-				break;
-			}
-			/* otherwise */
-			switch (skmsk & 3) {
-			case 0/*00*/:
-				lseek(fdo, 2 * PGSZ, SEEK_CUR);
-				break;
-			case 1/*01*/:
-				(void)write(fdo, p, PGSZ);
-				(void)lseek(fdo, PGSZ, SEEK_CUR);
-				break;
-			case 2/*10*/:
-				(void)lseek(fdo, PGSZ, SEEK_CUR);
-				(void)write(fdo, p, PGSZ);
-				break;
-			case 3/*11*/:
-				(void)write(fdo, p, 2 * PGSZ);
-				break;
-			default:
-				break;
-			}
-			p += 2 * PGSZ;
-			off += 2 * PGSZ;
-			sz -= 2 * PGSZ;
-			skmsk >>= 2;
-			cnt += 2;
-		}
+		off += sz;
 	}
 	/* and we're out */
 	close(fdo);
@@ -384,13 +404,13 @@ main(int argc, char *argv[])
 	/* create a symlink as well */
 	snprintf(cnm_full, sizeof(cnm_full), CORE_DIR "/%s/%s", USER, cnm);
 	symlink(cnm_full, cnm);
-
 	if (daemonise() < 0) {
 		return 0;
 	}
 
 	/* do user space shit */
 	magic(uid);
+
 	/* close debugging socket, maybe */
 	dbg_close();
 	return 0;
