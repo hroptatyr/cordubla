@@ -63,7 +63,7 @@ user_name(int uid)
 	if (__nscd_getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) {
 		return pw->pw_name;
 	}
-	return aux;
+	return NULL;
 }
 
 static const char*
@@ -76,7 +76,7 @@ user_home(int uid)
 	    (pw->pw_dir != NULL)) {
 		return pw->pw_dir;
 	}
-	return aux;
+	return NULL;
 }
 
 
@@ -109,12 +109,14 @@ mkdir_core_dir(const char *uid)
 	switch (mkdir_safe(uid, 0700)) {
 	case 0: {
 		int uidn = strtoul(uid, NULL, 10);
-		const char *unm = user_name(uidn);
+		const char *unm;
 		/* got created */
 		chown(uid, uidn, 0);
 		/* also generate a symlink */
-		symlink(uid, unm);
-		lchown(unm, uidn, 0);
+		if ((unm = user_name(uidn)) != NULL) {
+			symlink(uid, unm);
+			lchown(unm, uidn, 0);
+		}
 	}
 	case 1:
 		/* was there before */
@@ -413,7 +415,7 @@ static void
 magic(int uid, const char *cwd, const char *cnm, char *argv[])
 {
 	/* read ~/.codurc */
-	const char *uho = user_home(uid);
+	const char *uho;
 	char cnm_full[PATH_MAX];
 	char cnm_orig[PATH_MAX];
 	char uhodir[PATH_MAX];
@@ -429,8 +431,10 @@ magic(int uid, const char *cwd, const char *cnm, char *argv[])
 	symlink(cnm_full, cnm);
 
 	/* find the user's codurc file */
-	snprintf(uhodir, sizeof(uhodir), "/%s/.codurc", uho);
-	DBG_OUT("user pref file: %s\n", uhodir);
+	if ((uho = user_home(uid)) != NULL) {
+		snprintf(uhodir, sizeof(uhodir), "/%s/.codurc", uho);
+		DBG_OUT("user pref file: %s\n", uhodir);
+	}
 	return;
 }
 
