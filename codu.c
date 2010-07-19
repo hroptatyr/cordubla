@@ -418,7 +418,10 @@ magic(int uid, const char *cwd, const char *cnm, char *argv[])
 	const char *uho;
 	char cnm_full[PATH_MAX];
 	char cnm_orig[PATH_MAX];
-	char uhodir[PATH_MAX];
+	/* the user's script */
+	char uscr[PATH_MAX];
+	/* stat of the user's post script */
+	struct stat st[1] = {{0}};
 
 	/* links */
 	snprintf(cnm_full, sizeof(cnm_full), "%s/%s", cwd, cnm);
@@ -426,14 +429,21 @@ magic(int uid, const char *cwd, const char *cnm, char *argv[])
 	symlink(cnm_full, cnm_orig);
 	/* change into the crashing directory */
 	chdir(cwd);
-	/* create a symlink as well */
-	snprintf(cnm_full, sizeof(cnm_full), CORE_DIR "/%s/%s", USER, cnm);
-	symlink(cnm_full, cnm);
+	/* create a symlink as well, reuse cnm_orig */
+	snprintf(cnm_orig, sizeof(cnm_orig), CORE_DIR "/%s/%s", USER, cnm);
+	symlink(cnm_orig, cnm);
 
 	/* find the user's codurc file */
-	if ((uho = user_home(uid)) != NULL) {
-		snprintf(uhodir, sizeof(uhodir), "/%s/.codurc", uho);
-		DBG_OUT("user pref file: %s\n", uhodir);
+	if ((uho = user_home(uid)) != NULL &&
+	    (snprintf(uscr, sizeof(uscr), "/%s/.codu.post.sh", uho)) &&
+	    (stat(uscr, st) == 0) &&
+	    (st->st_mode & S_IEXEC)) {
+		DBG_OUT("user post script file: %s\n", uscr);
+
+		/* now execute the bugger */
+		argv[0] = uscr;
+		argv[1] = cnm_full;
+		execve(uscr, argv, __environ);
 	}
 	return;
 }
