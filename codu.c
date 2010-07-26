@@ -83,6 +83,16 @@ user_home(int uid)
 /* configurable? */
 #define CORE_DIR	"/tmp/core"
 
+typedef struct codu_ctx_s {
+	int uid, gid;
+	/* full path to cwd */
+	char cwd[PATH_MAX];
+	/* the core file name */
+	char cnm[PATH_MAX];
+	/* core limit size */
+	size_t clim;
+} *codu_ctx_t;
+
 static int
 mkdir_safe(const char *name, mode_t mode)
 {
@@ -95,8 +105,10 @@ mkdir_safe(const char *name, mode_t mode)
 }
 
 static int
-mkdir_core_dir(const char *uid)
+mkdir_core_dir(codu_ctx_t ctx)
 {
+	char uid[32] = {0};
+
 	(void)mkdir("/tmp", 0755);
 	if (chdir("/tmp") < 0) {
 		return -1;
@@ -105,17 +117,18 @@ mkdir_core_dir(const char *uid)
 	if (chdir("core") < 0) {
 		return -1;
 	}
+	/* printed repr of the uid */
+	snprintf(uid, sizeof(uid), "%d", ctx->uid);
 	/* now create the user dir, maybe */
 	switch (mkdir_safe(uid, 0700)) {
 	case 0: {
-		int uidn = strtoul(uid, NULL, 10);
 		const char *unm;
 		/* got created */
-		chown(uid, uidn, 0);
+		chown(uid, ctx->uid, ctx->gid);
 		/* also generate a symlink */
-		if ((unm = user_name(uidn)) != NULL) {
+		if ((unm = user_name(ctx->uid)) != NULL) {
 			symlink(uid, unm);
-			lchown(unm, uidn, 0);
+			lchown(unm, ctx->uid, ctx->gid);
 		}
 	}
 	case 1:
@@ -230,7 +243,7 @@ write_buffer(int fd, const char *buf, size_t bsz, size_t pgsz)
 }
 
 static int
-dump_core_sparsely(const char *file, size_t rlim)
+dump_core_sparsely(codu_ctx_t ctx)
 {
 /* the usual page size we want to cp over */
 #define PGSZ	(4096)
@@ -241,6 +254,9 @@ dump_core_sparsely(const char *file, size_t rlim)
 	int fdi, fdo;
 	ssize_t sz;
 	off_t off = 0;
+	/* get stuff from the context */
+	const char *file = ctx->cnm;
+	size_t rlim = ctx->clim;
 	/* use the stack space */
 	char buf[CNT] __attribute__((aligned(16)));
 
@@ -349,62 +365,66 @@ daemonise(void)
 }
 
 
-static void magic(int uid, const char *cwd, const char *cnm, char *argv[]);
+static void magic(codu_ctx_t ctx, char *argv[]);
 
-/* expected to be called like %u %h %t %p %c %e, use
- * sysctl -w kernel.core_pattern="|/path/to/codu %u %h %t %p %c %e" */
+/* expected to be called like %u %g %h %t %p %s %c %e, use
+ * sysctl -w kernel.core_pattern="|/path/to/codu %u %g %h %t %p %s %c %e" */
 int
 main(int argc, char *argv[])
 {
 #define USER	(argv[1])
-#define HOST	(argv[2])
-#define TIME	(argv[3])
-#define PID	(argv[4])
-#define CLIM	(argv[5])
-#define PROG	(argv[6])
-	char cwd[PATH_MAX];
-	char cnm[PATH_MAX];
-	size_t clim;
-	int uid;
+#define GRP	(argv[2])
+#define HOST	(argv[3])
+#define TIME	(argv[4])
+#define PID	(argv[5])
+#define SIG	(argv[6])
+#define CLIM	(argv[7])
+#define PROG	(argv[8])
+	struct codu_ctx_s ctx[1] = {{0}};
 
 	/* check caller first */
 	if (argc < 6) {
-		fputs("Usage: codu UID HOST STAMP PID LIMIT [NAME]\n", stderr);
+		fputs("Usage: codu UID GID HOST "
+		      "STAMP PID SIG LIMIT [NAME]\n", stderr);
 		return 1;
 	}
 
+	/* initialise our context */
+	ctx->uid = strtoul(USER, NULL, 10);
+	ctx->gid = strtoul(GRP, NULL, 10);
+
 	/* create the directories and cd there */
-	if (mkdir_core_dir(USER) < 0) {
+	if (mkdir_core_dir(ctx) < 0) {
 		return 1;
 	}
 
 	/* check if the core file limit allows us to write a core */
-	if ((clim = strtol(CLIM, NULL, 10)) == 0) {
+	if ((ctx->clim = strtol(CLIM, NULL, 10)) == 0) {
 		/* nope */
 		return 0;
 	}
 
 	/* get the working directory of the crashing process */
-	get_cwd(cwd, sizeof(cwd), PID);
+	get_cwd(ctx->cwd, sizeof(ctx->cwd), PID);
 
-	/* lose some privileges */
-	uid = strtoul(USER, NULL, 10);
-	setuid(uid);
+	/* lose some privileges, become uid/gid */
+	setuid(ctx->uid);
+	setgid(ctx->gid);
 
 	dbg_open(O_TRUNC);
 
 	/* core file name */
-	snprintf(cnm, sizeof(cnm), "core-%s.%s.%s.%s.%s.dump",
+	snprintf(ctx->cnm, sizeof(ctx->cnm), "core-%s.%s.%s.%s.%s.dump",
 		 PROG, USER, HOST, TIME, PID);
 	/* and dump it */
-	dump_core_sparsely(cnm, clim);
+	dump_core_sparsely(ctx);
 
 	if (daemonise() < 0) {
 		return 0;
 	}
 
 	/* do user space shit */
-	magic(uid, cwd, cnm, argv);
+	magic(ctx, argv);
 
 	/* close debugging socket, maybe */
 	dbg_close();
@@ -412,7 +432,7 @@ main(int argc, char *argv[])
 }
 
 static void
-magic(int uid, const char *cwd, const char *cnm, char *argv[])
+magic(codu_ctx_t ctx, char *argv[])
 {
 	/* read ~/.codurc */
 	const char *uho;
@@ -424,17 +444,18 @@ magic(int uid, const char *cwd, const char *cnm, char *argv[])
 	struct stat st[1] = {{0}};
 
 	/* links */
-	snprintf(cnm_full, sizeof(cnm_full), "%s/%s", cwd, cnm);
-	snprintf(cnm_orig, sizeof(cnm_orig), "%s.orig", cnm);
+	snprintf(cnm_full, sizeof(cnm_full), "%s/%s", ctx->cwd, ctx->cnm);
+	snprintf(cnm_orig, sizeof(cnm_orig), "%s.orig", ctx->cnm);
 	symlink(cnm_full, cnm_orig);
 	/* change into the crashing directory */
-	chdir(cwd);
+	chdir(ctx->cwd);
 	/* create a symlink as well, reuse cnm_orig */
-	snprintf(cnm_orig, sizeof(cnm_orig), CORE_DIR "/%s/%s", USER, cnm);
-	symlink(cnm_orig, cnm);
+	snprintf(cnm_orig, sizeof(cnm_orig),
+		 CORE_DIR "/%d/%s", ctx->uid, ctx->cnm);
+	symlink(cnm_orig, ctx->cnm);
 
 	/* find the user's codurc file */
-	if ((uho = user_home(uid)) != NULL &&
+	if ((uho = user_home(ctx->uid)) != NULL &&
 	    (snprintf(uscr, sizeof(uscr), "/%s/.codu.post.sh", uho)) &&
 	    (stat(uscr, st) == 0) &&
 	    (st->st_mode & S_IEXEC)) {
@@ -442,7 +463,11 @@ magic(int uid, const char *cwd, const char *cnm, char *argv[])
 
 		/* now execute the bugger */
 		argv[0] = uscr;
-		argv[1] = cnm_full;
+		/* first argument is the actual location of the core file */
+		argv[1] = cnm_orig;
+		/* second argument is the link we've created */
+		argv[2] = cnm_full;
+		/* off we go */
 		execve(uscr, argv, __environ);
 	}
 	return;
