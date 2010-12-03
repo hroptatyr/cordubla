@@ -1,0 +1,3 @@
+#!/bin/bash
+
+/sbin/sysctl -w kernel.core_pattern="|/usr/bin/codu %u %g %h %t %p %s %c %e"

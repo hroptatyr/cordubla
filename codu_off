@@ -1,0 +1,3 @@
+#!/bin/bash
+
+/sbin/sysctl -w kernel.core_pattern="core-%e.%u.%h.%t.%p.dump"
