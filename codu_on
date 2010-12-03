@@ -1,3 +1,11 @@
-#!/bin/bash
+#!/bin/sh
 
-/sbin/sysctl -w kernel.core_pattern="|/usr/bin/codu %u %g %h %t %p %s %c %e"
+CORE_PATTERN='kernel.core_pattern=|/sbin/codu %u %g %h %t %p %s %c %e'
+
+tmp_sysctl="$(mktemp)"
+grep -v "kernel.core_pattern" /etc/sysctl.conf > "${tmp_sysctl}" 2>/dev/null
+echo "${CORE_PATTERN}" >> "${tmp_sysctl}"
+mv "${tmp_sysctl}" /etc/sysctl.conf
+chmod 0644 /etc/sysctl.conf
+
+/sbin/sysctl -w "${CORE_PATTERN}"
