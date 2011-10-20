@@ -1,0 +1,11 @@
+#!/bin/sh
+
+CORE_PATTERN='kernel.core_pattern=core-%e.%u.%h.%t.%p.dump'
+
+tmp_sysctl="$(mktemp)"
+grep -v "kernel.core_pattern" /etc/sysctl.conf > "${tmp_sysctl}" 2>/dev/null
+echo "${CORE_PATTERN}" >> "${tmp_sysctl}"
+mv "${tmp_sysctl}" /etc/sysctl.conf
+chmod 0644 /etc/sysctl.conf
+
+/sbin/sysctl -w "${CORE_PATTERN}"
