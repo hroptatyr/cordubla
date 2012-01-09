@@ -60,7 +60,8 @@ user_name(int uid)
 	/* just clip the fucker */
 	struct passwd pw[1], *pwr;
 	static char aux[NSS_BUFLEN_PASSWD] = {0};
-	if (__nscd_getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) {
+	if ((__nscd_getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) &&
+	    (pwr != NULL)) {
 		return pw->pw_name;
 	}
 	return NULL;
@@ -73,7 +74,7 @@ user_home(int uid)
 	struct passwd pw[1], *pwr;
 	static char aux[NSS_BUFLEN_PASSWD] = {0};
 	if ((__nscd_getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) &&
-	    (pw->pw_dir != NULL)) {
+	    (pwr != NULL)) {
 		return pw->pw_dir;
 	}
 	return NULL;
