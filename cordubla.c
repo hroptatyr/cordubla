@@ -84,6 +84,10 @@ user_home(int uid)
 /* configurable? */
 #define CORE_DIR	"/tmp/core"
 
+#if !defined PATH_MAX
+# define PATH_MAX	(4096U)
+#endif	/* PATH_MAX */
+
 typedef struct codu_ctx_s {
 	int uid, gid;
 	/* full path to cwd */
