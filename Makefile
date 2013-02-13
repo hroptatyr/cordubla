@@ -1,5 +1,8 @@
 all: cordubla test
 
+install: cordubla
+	install -p -m 0755 $< /sbin/$<
+
 clean:
 	rm -f *.o cordubla
 
