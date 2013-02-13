@@ -1,6 +1,6 @@
 #!/bin/sh
 
-CORE_PATTERN='kernel.core_pattern=|/sbin/codu %u %g %h %t %p %s %c %e'
+CORE_PATTERN='kernel.core_pattern=|/sbin/cordubla %u %g %h %t %p %s %c %e'
 
 tmp_sysctl="$(mktemp)"
 grep -v "kernel.core_pattern" /etc/sysctl.conf > "${tmp_sysctl}" 2>/dev/null

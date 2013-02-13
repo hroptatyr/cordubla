@@ -369,7 +369,7 @@ daemonise(void)
 static void magic(codu_ctx_t ctx, char *argv[]);
 
 /* expected to be called like %u %g %h %t %p %s %c %e, use
- * sysctl -w kernel.core_pattern="|/path/to/codu %u %g %h %t %p %s %c %e" */
+ * sysctl -w kernel.core_pattern="|/path/to/cordubla %u %g %h %t %p %s %c %e" */
 int
 main(int argc, char *argv[])
 {
@@ -457,7 +457,7 @@ magic(codu_ctx_t ctx, char *argv[])
 
 	/* find the user's codurc file */
 	if ((uho = user_home(ctx->uid)) != NULL &&
-	    (snprintf(uscr, sizeof(uscr), "/%s/.codu.post.sh", uho)) &&
+	    (snprintf(uscr, sizeof(uscr), "/%s/.cordubla.post.sh", uho)) &&
 	    (stat(uscr, st) == 0) &&
 	    (st->st_mode & S_IEXEC)) {
 		DBG_OUT("user post script file: %s\n", uscr);
@@ -474,4 +474,4 @@ magic(codu_ctx_t ctx, char *argv[])
 	return;
 }
 
-/* codu.c ends here */
+/* cordubla.c ends here */
