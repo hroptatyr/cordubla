@@ -105,8 +105,12 @@ mkdir_safe(const char *name, mode_t mode)
 	lstat(name, st);
 	if (S_ISDIR(st->st_mode)) {
 		return 1;
+	} else if (mkdir(name, mode) < 0) {
+		return -1;
+	} else if (chmod(name, mode) < 0) {
+		return -1;
 	}
-	return mkdir(name, mode);
+	return 0;
 }
 
 static int
@@ -116,9 +120,13 @@ mkdir_core_dir(codu_ctx_t ctx)
 
 	if (mkdir("/tmp", 0755) < 0 && errno != EEXIST) {
 		return -1;
-	} else if (mkdir("/tmp/core", 0755) < 0 && errno != EEXIST) {
+	} else if (mkdir(CORE_DIR, 0755) < 0 && errno != EEXIST) {
 		return -1;
-	} else if (chdir("/tmp/core") < 0) {
+	} else if (chmod(CORE_DIR, 0755) < 0) {
+		return -1;
+	} else if (chown(CORE_DIR, 0, 0) < 0) {
+		return -1;
+	} else if (chdir(CORE_DIR) < 0) {
 		return -1;
 	}
 	/* printed repr of the uid */
