@@ -62,7 +62,7 @@ user_name(int uid)
 	static char aux[NSS_BUFLEN_PASSWD] = {0};
 	if ((__nscd_getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) &&
 	    (pwr != NULL)) {
-		return pw->pw_name;
+		return pwr->pw_name;
 	}
 	return NULL;
 }
@@ -75,7 +75,7 @@ user_home(int uid)
 	static char aux[NSS_BUFLEN_PASSWD] = {0};
 	if ((__nscd_getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) &&
 	    (pwr != NULL)) {
-		return pw->pw_dir;
+		return pwr->pw_dir;
 	}
 	return NULL;
 }
@@ -105,8 +105,12 @@ mkdir_safe(const char *name, mode_t mode)
 	lstat(name, st);
 	if (S_ISDIR(st->st_mode)) {
 		return 1;
+	} else if (mkdir(name, mode) < 0) {
+		return -1;
+	} else if (chmod(name, mode) < 0) {
+		return -1;
 	}
-	return mkdir(name, mode);
+	return 0;
 }
 
 static int
@@ -114,12 +118,15 @@ mkdir_core_dir(codu_ctx_t ctx)
 {
 	char uid[32] = {0};
 
-	(void)mkdir("/tmp", 0755);
-	if (chdir("/tmp") < 0) {
+	if (mkdir("/tmp", 0755) < 0 && errno != EEXIST) {
 		return -1;
-	}
-	(void)mkdir("core", 0755);
-	if (chdir("core") < 0) {
+	} else if (mkdir(CORE_DIR, 0755) < 0 && errno != EEXIST) {
+		return -1;
+	} else if (chmod(CORE_DIR, 0755) < 0) {
+		return -1;
+	} else if (chown(CORE_DIR, 0, 0) < 0) {
+		return -1;
+	} else if (chdir(CORE_DIR) < 0) {
 		return -1;
 	}
 	/* printed repr of the uid */
@@ -129,11 +136,16 @@ mkdir_core_dir(codu_ctx_t ctx)
 	case 0: {
 		const char *unm;
 		/* got created */
-		chown(uid, ctx->uid, ctx->gid);
+		if (chown(uid, ctx->uid, ctx->gid) < 0) {
+			/* grrrr */
+			return -1;
+		}
 		/* also generate a symlink */
-		if ((unm = user_name(ctx->uid)) != NULL) {
-			symlink(uid, unm);
-			lchown(unm, ctx->uid, ctx->gid);
+		if ((unm = user_name(ctx->uid)) == NULL ||
+		    symlink(uid, unm) < 0 ||
+		    lchown(unm, ctx->uid, ctx->gid) < 0) {
+			/* what shall we do? stop dumping? */
+			;
 		}
 	}
 	case 1:
@@ -197,6 +209,19 @@ fill_buffer(int fd, char *restrict buf, size_t max)
 	return tot;
 }
 
+static ssize_t
+write_safe(int fd, const char *buf, size_t bsz)
+{
+	ssize_t tot = 0;
+	ssize_t nwr;
+
+	for (; (nwr = write(fd, buf + tot, bsz - tot)) > 0; tot += nwr);
+	if (nwr < 0 && tot == 0) {
+		tot = -1;
+	}
+	return tot;
+}
+
 static inline void
 write_buffer(int fd, const char *buf, size_t bsz, size_t pgsz)
 {
@@ -211,7 +236,7 @@ write_buffer(int fd, const char *buf, size_t bsz, size_t pgsz)
 		DBG_OUT("w:0 s:64\n");
 		return;
 	} else if (skmsk == 0xffffffffffffffff) {
-		write(fd, buf, bsz);
+		write_safe(fd, buf, bsz);
 		DBG_OUT("w:64 s:0\n");
 		return;
 	}
@@ -234,11 +259,11 @@ write_buffer(int fd, const char *buf, size_t bsz, size_t pgsz)
 		f0 = ffsl(~skmsk);
 		if (f0 == 0) {
 			/* just write to bsz */
-			write(fd, buf, ben - buf);
+			write_safe(fd, buf, ben - buf);
 			DBG_OUT("w:? %zd\n", ben - buf);
 			break;
 		} else if (f0 > 1/*must be true*/) {
-			write(fd, buf, (f0 - 1) * pgsz);
+			write_safe(fd, buf, (f0 - 1) * pgsz);
 			skmsk >>= (f0 - 1);
 			buf += (f0 - 1) * pgsz;
 			DBG_OUT("w:%d %zu\n", f0 - 1, (f0 - 1) * pgsz);
@@ -264,6 +289,7 @@ dump_core_sparsely(codu_ctx_t ctx)
 	size_t rlim = ctx->clim;
 	/* use the stack space */
 	char buf[CNT] __attribute__((aligned(16)));
+	int rc = 0;
 
 	if ((fdi = STDIN_FILENO) < 0) {
 		return -1;
@@ -284,11 +310,13 @@ dump_core_sparsely(codu_ctx_t ctx)
 		DBG_OUT("%zd %zd\n", off, sz);
 		off += sz;
 	}
-	ftruncate(fdo, off);
+	if (ftruncate(fdo, off) < 0) {
+		rc = -1;
+	}
 	/* and we're out */
 	close(fdo);
 	close(fdi);
-	return 0;
+	return rc;
 }
 
 #if 0
@@ -413,8 +441,13 @@ main(int argc, char *argv[])
 	get_cwd(ctx->cwd, sizeof(ctx->cwd), PID);
 
 	/* lose some privileges, become uid/gid */
-	setuid(ctx->uid);
-	setgid(ctx->gid);
+	if (setgid(ctx->gid) < 0) {
+		/* failed to switch gid */
+		return 1;
+	} else if (setuid(ctx->uid) < 0) {
+		/* failed to switch uid */
+		return 1;
+	}
 
 	dbg_open(O_TRUNC);
 
@@ -451,13 +484,16 @@ magic(codu_ctx_t ctx, char *argv[])
 	/* links */
 	snprintf(cnm_full, sizeof(cnm_full), "%s/%s", ctx->cwd, ctx->cnm);
 	snprintf(cnm_orig, sizeof(cnm_orig), "%s.orig", ctx->cnm);
-	symlink(cnm_full, cnm_orig);
-	/* change into the crashing directory */
-	chdir(ctx->cwd);
-	/* create a symlink as well, reuse cnm_orig */
-	snprintf(cnm_orig, sizeof(cnm_orig),
-		 CORE_DIR "/%d/%s", ctx->uid, ctx->cnm);
-	symlink(cnm_orig, ctx->cnm);
+	if (symlink(cnm_full, cnm_orig) < 0 ||
+	    /* change into the crashing directory */
+	    chdir(ctx->cwd) < 0 ||
+	    /* create a symlink as well, reuse cnm_orig */
+	    (snprintf(cnm_orig, sizeof(cnm_orig),
+		      CORE_DIR "/%d/%s", ctx->uid, ctx->cnm),
+	     symlink(cnm_orig, ctx->cnm) < 0)) {
+		/* that didn't go down too well */
+		return;
+	}
 
 	/* find the user's codurc file */
 	if ((uho = user_home(ctx->uid)) != NULL &&
