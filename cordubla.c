@@ -13,6 +13,8 @@
 #include <pwd.h>
 #include "me_nscd_proto.h"
 
+#define countof(x)	(sizeof(x) / sizeof(*x))
+
 /* fuck ugly */
 #if defined DEBUG
 static volatile int fdb;
@@ -441,12 +443,18 @@ main(int argc, char *argv[])
 	get_cwd(ctx->cwd, sizeof(ctx->cwd), PID);
 
 	/* lose some privileges, become uid/gid */
-	if (setgid(ctx->gid) < 0) {
-		/* failed to switch gid */
-		return 1;
-	} else if (setuid(ctx->uid) < 0) {
-		/* failed to switch uid */
-		return 1;
+	{
+		gid_t supgs[1UL] = {ctx->gid};
+
+		if (setgroups(countof(supgs), supgs) < 0) {
+			return 1;
+		} else if (setgid(ctx->gid) < 0) {
+			/* failed to switch gid */
+			return 1;
+		} else if (setuid(ctx->uid) < 0) {
+			/* failed to switch uid */
+			return 1;
+		}
 	}
 
 	dbg_open(O_TRUNC);
