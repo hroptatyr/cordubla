@@ -141,12 +141,11 @@ mkdir_core_dir(codu_ctx_t ctx)
 			return -1;
 		}
 		/* also generate a symlink */
-		if ((unm = user_name(ctx->uid)) != NULL) {
-			if (symlink(uid, unm) < 0 ||
-			    lchown(unm, ctx->uid, ctx->gid) < 0) {
-				/* what shall we do? stop dumping? */
-				return -1;
-			}
+		if ((unm = user_name(ctx->uid)) == NULL ||
+		    symlink(uid, unm) < 0 ||
+		    lchown(unm, ctx->uid, ctx->gid) < 0) {
+			/* what shall we do? stop dumping? */
+			;
 		}
 	}
 	case 1:
