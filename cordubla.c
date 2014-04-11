@@ -62,7 +62,7 @@ user_name(int uid)
 	static char aux[NSS_BUFLEN_PASSWD] = {0};
 	if ((__nscd_getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) &&
 	    (pwr != NULL)) {
-		return pw->pw_name;
+		return pwr->pw_name;
 	}
 	return NULL;
 }
@@ -75,7 +75,7 @@ user_home(int uid)
 	static char aux[NSS_BUFLEN_PASSWD] = {0};
 	if ((__nscd_getpwuid_r(uid, pw, aux, sizeof(aux), &pwr) == 0) &&
 	    (pwr != NULL)) {
-		return pw->pw_dir;
+		return pwr->pw_dir;
 	}
 	return NULL;
 }
