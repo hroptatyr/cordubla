@@ -114,9 +114,9 @@ mkdir_core_dir(codu_ctx_t ctx)
 {
 	char uid[32] = {0};
 
-	if (mkdir("/tmp", 0755) < 0) {
+	if (mkdir("/tmp", 0755) < 0 && errno != EEXIST) {
 		return -1;
-	} else if (mkdir("/tmp/core", 0755) < 0) {
+	} else if (mkdir("/tmp/core", 0755) < 0 && errno != EEXIST) {
 		return -1;
 	} else if (chdir("/tmp/core") < 0) {
 		return -1;
